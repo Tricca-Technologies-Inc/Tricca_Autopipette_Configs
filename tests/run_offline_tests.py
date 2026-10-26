@@ -6,19 +6,22 @@ config repo, one klippy process per case, and checks each case's errors
 or reported state. Exits non-zero on any failure.
 
 Usage:
-  run_offline_tests.py --klipper <klipper checkout> --config <configs repo>
-                       --dicts <dir> [--python <python with klippy deps>]
+  run_offline_tests.py [--config <configs repo>] [--dicts <dir>]
+                       [--klippy <klippy command> | --klipper <klipper checkout>
+                        [--python <python with klippy deps>]]
                        [--stage auto|1|2] [--keep]
 
---dicts must contain (built per WP1 section 7 at the pinned Klipper rev):
-  m8p-bridge.dict  ebb42.dict  octopus.dict  host.dict
+--config defaults to this repo, --dicts to tests/dicts/, and klippy to the
+"klippy" on PATH (nixpkgs' klipper package; see tests/run.sh). --dicts must
+contain m8p.dict, octopus.dict and host.dict, built at the pinned Klipper rev
+(tests/dicts/README.md).
 
 Before CFG-1 exists, build a config to test with make_fixture.py.
 
 Batch-mode facts this harness relies on (verified at Klipper 7bc4d09):
-  * CAN MCUs crash batch mode (canbus_bus_state enumeration), so every
-    MCU is stubbed as "serial: /dev/null"; the dictionaries still define
-    each board's commands and pins.
+  * Every MCU is stubbed as "serial: /dev/null"; the dictionaries still
+    define each board's commands and pins. (CAN MCUs crash batch mode in
+    canbus_bus_state enumeration; with the EBB42 deferred there are none.)
   * Homing moves never trigger early: each runs to its MOVE target and the
     position is set to that target. G28 sequencing can be tested; switch
     behaviour (release checks, direction, trigger point) cannot.
@@ -32,6 +35,7 @@ Batch-mode facts this harness relies on (verified at Klipper 7bc4d09):
 import argparse, glob, os, re, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+DICTS = {"": "m8p.dict", "octopus": "octopus.dict", "CB1": "host.dict"}  # MCU name -> file
 
 HOMED = "SET_KINEMATIC_POSITION X=150 Y=150 Z=0\n_T_HOME_ALL_PLATES\n"
 PIPHOMED = ("MANUAL_STEPPER STEPPER=pipette_stepper SET_POSITION=0\n"
@@ -231,7 +235,7 @@ def stage_var(cfg_dir):
 
 
 def has_limits(cfg_dir):
-    p = os.path.join(cfg_dir, "ebb-pipette.cfg")
+    p = os.path.join(cfg_dir, "tricca-autopipette.cfg")
     sec = section(open(p).read(), "manual_stepper pipette_stepper") if os.path.exists(p) else ""
     return bool(re.search(r"^position_min\s*[:=]", sec, re.M))
 
@@ -246,8 +250,7 @@ def build(config, work):
     text = MCU_SECTION_RE.sub("", text)  # drop machine-written MCU sections
     text += ("\n[include test-harness.cfg]\n"
              + (keep_host.group(0) if keep_host else "[mcu CB1]\nserial: /tmp/klipper_host_mcu\n")
-             + "\n[mcu]\nserial: /dev/null\n[mcu EBBCan]\nserial: /dev/null\n"
-               "[mcu octopus]\nserial: /dev/null\n")
+             + "\n[mcu]\nserial: /dev/null\n[mcu octopus]\nserial: /dev/null\n")
     open(p, "w").write(text)
 
 
@@ -274,13 +277,12 @@ def with_state_probe(gcode, exp):
 def run_case(args, work, i, gcode):
     gf, lf = os.path.join(work, f"case{i}.gcode"), os.path.join(work, f"case{i}.log")
     open(gf, "w").write(gcode)
-    d = args.dicts
-    cmd = [args.python, os.path.join(args.klipper, "klippy", "klippy.py"),
-           os.path.join(work, "printer.cfg"), "-i", gf, "-o", os.path.join(work, f"case{i}.serial"),
-           "-l", lf, "-d", os.path.join(d, "m8p-bridge.dict"),
-           "-d", "EBBCan=" + os.path.join(d, "ebb42.dict"),
-           "-d", "octopus=" + os.path.join(d, "octopus.dict"),
-           "-d", "CB1=" + os.path.join(d, "host.dict")]
+    klippy = ([args.python, os.path.join(args.klipper, "klippy", "klippy.py")] if args.klipper
+              else [args.klippy])
+    cmd = klippy + [os.path.join(work, "printer.cfg"), "-i", gf,
+                    "-o", os.path.join(work, f"case{i}.serial"), "-l", lf]
+    for mcu, f in DICTS.items():
+        cmd += ["-d", (mcu + "=" if mcu else "") + os.path.join(args.dicts, f)]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
     return open(lf).read() if os.path.exists(lf) else "Config error: no log written\n"
 
@@ -334,13 +336,20 @@ def check(log, exp):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--klipper", required=True)
-    ap.add_argument("--config", required=True)
-    ap.add_argument("--dicts", required=True)
+    ap.add_argument("--klippy", default="klippy", help="klippy command (default: on PATH)")
+    ap.add_argument("--klipper", help="klipper checkout; runs klippy/klippy.py with --python")
+    ap.add_argument("--config", default=os.path.dirname(HERE))
+    ap.add_argument("--dicts", default=os.path.join(HERE, "dicts"))
     ap.add_argument("--python", default=sys.executable)
     ap.add_argument("--stage", default="auto", choices=["auto", "1", "2"])
     ap.add_argument("--keep", action="store_true", help="keep the work dir and logs")
     args = ap.parse_args()
+    args.config, args.dicts = os.path.abspath(args.config), os.path.abspath(args.dicts)
+    for f in DICTS.values():
+        if not os.path.exists(os.path.join(args.dicts, f)):
+            sys.exit(f"missing dictionary {f} in {args.dicts}")
+    if not args.klipper and not shutil.which(args.klippy):
+        sys.exit(f"klippy command {args.klippy!r} not found (see tests/run.sh)")
 
     work = tempfile.mkdtemp(prefix="ap-offline-")
     build(args.config, work)

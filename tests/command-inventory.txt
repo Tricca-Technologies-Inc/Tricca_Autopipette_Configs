@@ -1,5 +1,7 @@
 # Reviewed inventory of every G-code command Klipper registers with this config
-# (Klipper 7bc4d09, configs d7c45ce + plan Rev K reference files).
+# (Klipper 7bc4d09, configs d7c45ce + plan Rev L reference files, EBB42 deferred:
+# no [temperature_sensor ebb42], so no M105, QUERY_ADC, TEMPERATURE_WAIT or
+# TURN_OFF_HEATERS).
 # The offline tests (C-45) fail if Klipper registers a command that is not
 # listed here, or if a listed one disappears. Before adding a line, decide how
 # the new command can move Z, a plate or the plunger, and add a check + C-test
@@ -55,7 +57,6 @@ HOME_PIPETTE | CHECKED | plunger homing
 HOME_PLATE | CHECKED | I4 + switch-release check
 HOME_PLATES | CHECKED | I4
 INIT_TMC | NOMOTION |
-M105 | NOMOTION |
 M110 | NOMOTION |
 M112 | RESTART | emergency stop
 M114 | NOMOTION |
@@ -94,7 +95,6 @@ PLATE_IN | CHECKED | via PLATE_MOVE
 PLATE_MOVE | CHECKED | pre-check, then G1
 PLATE_OUT | CHECKED | via PLATE_MOVE
 PLATES_IN | CHECKED | via PLATE_MOVE
-QUERY_ADC | NOMOTION |
 QUERY_ENDSTOPS | NOMOTION |
 QUERY_PLATES | NOMOTION |
 RESPOND | NOMOTION |
@@ -127,9 +127,7 @@ SET_VELOCITY_LIMIT | NOMOTION | tapd stage 2 brackets plunger moves
 STATUS | NOMOTION |
 STEPPER_BUZZ | CHECKED | plates: tip raised; Z steppers: I2 for 1 mm
 STEPPER_BUZZ_BASE | BYPASS | original STEPPER_BUZZ
-TEMPERATURE_WAIT | NOMOTION |
 TUNING_TOWER | NOMOTION | changes a parameter as Z moves; the moves are still G1
-TURN_OFF_HEATERS | NOMOTION |
 UPDATE_DELAYED_GCODE | NOMOTION | can only re-run the P bind
 Z_ENDSTOP_CALIBRATE | REFUSED | TESTZ would move Z directly
 Z_ENDSTOP_CALIBRATE_BASE | BYPASS | original Z_ENDSTOP_CALIBRATE
