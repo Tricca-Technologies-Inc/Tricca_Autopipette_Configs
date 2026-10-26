@@ -6,7 +6,7 @@ These tests run the pinned Klipper in **batch mode** (no boards attached) agains
 |---|---|
 | `run.sh` | Runs the tests with the Klipper and Python that cb1-autopipette pins (`nix shell --inputs-from`) |
 | `run_offline_tests.py` | Builds a temporary, stubbed copy of the config, lints it, runs every case, and exits non-zero on any failure |
-| `test-harness.cfg` | Test-only macros (`_T_HOME_PLATE`, `_T_HOME_ALL_PLATES`, `_T_STATE`, `_T_CMDS`). Included into the temporary copy only |
+| `test-harness.cfg` | Test-only macros (`_T_HOME_PLATE`, `_T_HOME_ALL_PLATES`, `_T_STATE`, `_T_CMDS`, `_T_SAFE_STOPS`, `_T_SAFE_DEFAULT`). Included into the temporary copy only |
 | `make_fixture.py` | Builds a "configs repo after CFG-1" (or after CFG-3 with `--stage 2`) from this repo plus the plan's `reference/klipper/`, so the tests can run before CFG-1 exists |
 | `command-inventory.txt` | Every G-code command Klipper registers with this config, classified (checked, refused, bypass, no motion …). Case C-45 fails on any difference |
 | `dicts/` | The firmware data dictionaries for the M8P, the Octopus and the host MCU, with their Kconfigs and a regeneration script (see `dicts/README.md`) |
@@ -29,13 +29,11 @@ tests/run.sh --config <dir>  # another config directory, e.g. a fixture
 
 The work directory goes under `$TMPDIR`.
 
-Until CFG-1 is merged, this repo has no plate config and the run fails. Test a fixture instead:
+`make_fixture.py` builds the pre-CFG-1 fixtures the harness was first checked against (the Rev L reference, without the tip-safe list):
 
 ```sh
 REF=<Tricca_AutoPipette>/docs/plans/axis-expansion/reference/klipper
-python3 tests/make_fixture.py --configs . --ref "$REF" --out /tmp/fx1
-python3 tests/make_fixture.py --configs . --ref "$REF" --out /tmp/fx2 --stage 2
-tests/run.sh --config /tmp/fx1 && tests/run.sh --config /tmp/fx2
+python3 tests/make_fixture.py --configs <configs checkout before CFG-1> --ref "$REF" --out /tmp/fx1
 ```
 
 ## What the harness does
@@ -71,8 +69,8 @@ Re-check these, and regenerate `dicts/`, whenever the Klipper pin changes.
 ## Cases
 
 C-ids match WP2 §5.
-- **Both stages:** C-01…C-12, C-14b, C-15, C-19, C-19c, C-21…C-28c, C-30, C-30b, C-31, C-33…C-35, C-38, C-38b, C-40…C-43, C-45.
+- **Both stages:** C-01…C-12, C-14b, C-15, C-19, C-19c, C-21…C-28c, C-30, C-30b, C-31, C-33…C-35, C-38, C-38b, C-40…C-43, C-45, C-46…C-46e (tip-safe positions, addendum D39).
 - **Stage 1 only:** C-13, C-16, C-18, C-19b, C-20, C-32, C-32b, C-39…C-39c.
 - **Stage 2 only:** C-13s, C-17…C-17c, C-19s, C-36s, C-37s.
 
-The EBB-free fixture (configs `d7c45ce` + Rev L reference) passed 55/55 at stage 1 and 52/52 at stage 2 on 2026-10-26.
+The EBB-free fixture (configs `d7c45ce` + Rev L reference) passed 55/55 at stage 1 and 52/52 at stage 2 on 2026-10-26. With CFG-1, this repo passes 66/66 at stage 1.
