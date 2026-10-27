@@ -42,6 +42,7 @@ PIPHOMED = ("MANUAL_STEPPER STEPPER=pipette_stepper SET_POSITION=0\n"
             "MANUAL_STEPPER STEPPER=pipette_stepper ENABLE=1\n"
             "SET_GCODE_VARIABLE MACRO=_PIPETTE_STATE VARIABLE=homed VALUE=1\n")
 BIND = "_PIPETTE_BIND\n"
+STOP120 = HOMED + "_T_SAFE_STOPS PLATE=plate1 STOPS=0,120,350\n"  # plate1 tip-safe at 120 too
 MID = HOMED + "G1 Z20 F600\nSAVE_GCODE_STATE NAME=low\nG1 Z0 F600\nG1 U100 F3000\n"  # tip was low, now raised; plate1 out to 100
 
 # (id, gcode, expectation)
@@ -142,6 +143,34 @@ COMMON = [
     ("C-43 SAVE_GCODE_STATE name with a quote refused", HOMED +
      'SAVE_GCODE_STATE NAME="it\'s"\n', "refused:must not contain quotes"),
     ("C-45 command inventory matches", "_T_CMDS\n", "inventory"),
+    # --- CFG-1: per-plate tip-safe positions (addendum D39) -------------------
+    ("C-46 plate at a configured non-end safe stop, then G1 Z20",
+     STOP120 + "G1 U120 F3000\nG1 Z20 F600\n_T_STATE\n",
+     r"state:pos=\(150.0, 150.0, 20.0, 0.0, 120.0"),
+    ("C-46b plate at an off-list mid-travel position, then G1 Z20",
+     STOP120 + "G1 U100 F3000\nG1 Z20\n", "refused:plate1 mid-travel"),
+    ("C-46b2 within park_tol of a safe stop counts, just outside doesn't",
+     STOP120 + "G1 U120.05 F3000\nG1 Z20 F600\nG1 Z0 F600\nG1 U120.2 F3000\nG1 Z20\n",
+     "refused:plate1 mid-travel (120.2)"),
+    ("C-46c RESUME onto a plate at a configured safe stop",
+     STOP120 + "G1 Z20 F600\nPAUSE\nG1 Z0 F600\nG1 U120 F3000\nRESUME\n_T_STATE\n",
+     r"state:pos=\(150.0, 150.0, 20.0, 0.0, 120.0"),
+    ("C-46c2 RESUME onto a plate at an off-list position",
+     STOP120 + "G1 Z20 F600\nPAUSE\nG1 Z0 F600\nG1 U100 F3000\nRESUME\n", "refused:plate1 mid-travel"),
+    ("C-46c3 SET_GCODE_OFFSET MOVE=1, plate at a configured safe stop",
+     STOP120 + "G1 U120 F3000\nSET_GCODE_OFFSET Z_ADJUST=5 MOVE=1\n_T_STATE\n",
+     r"state:pos=\(150.0, 150.0, 5.0, 0.0, 120.0"),
+    ("C-46c4 SET_GCODE_OFFSET MOVE=1, plate at an off-list position",
+     STOP120 + "G1 U100 F3000\nSET_GCODE_OFFSET Z_ADJUST=5 MOVE=1\n", "refused:plate1 mid-travel"),
+    ("C-46c5 RESTORE_GCODE_STATE MOVE=1, plate at a configured safe stop",
+     STOP120 + "G1 Z20 F600\nSAVE_GCODE_STATE NAME=low\nG1 Z0 F600\nG1 U120 F3000\n"
+     "RESTORE_GCODE_STATE NAME=low MOVE=1\n_T_STATE\n", r"state:pos=\(150.0, 150.0, 20.0, 0.0, 120.0"),
+    ("C-46c6 STEPPER_BUZZ on a Z stepper, plate at an off-list position",
+     STOP120 + "G1 U100 F3000\nSTEPPER_BUZZ STEPPER=stepper_z\n", "refused:plate1 mid-travel"),
+    ("C-46d a plate missing from the list is never tip-safe",
+     HOMED + "_T_SAFE_STOPS PLATE=plate2 STOPS=\nG1 Z20\n", "refused:plate2 mid-travel"),
+    ("C-46e default list is [0, position_max] for every plate", "_T_SAFE_DEFAULT\n",
+     "state:safe_default=True"),
 ]
 STAGE1 = [
     ("C-13 tapd-style plunger move, P rebound", PIPHOMED +
